@@ -152,6 +152,29 @@ static void unbind_pbo() { glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0); }
 
 static void register_pbo_to_cuda(GLuint *pbo,
                                  cudaGraphicsResource_t *cuda_resource) {
+    // Is the PBO valid?
+    printf("PBO id: %u\n", *pbo);
+    GLint buf_size = 0;
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, *pbo);
+    glGetBufferParameteriv(GL_PIXEL_UNPACK_BUFFER, GL_BUFFER_SIZE, &buf_size);
+    printf("PBO buffer size: %d\n", buf_size);
+    GLenum gl_err = glGetError();
+    printf("GL error state: %d\n", gl_err);
+
+    // What CUDA device are we on?
+    int dev;
+    cudaGetDevice(&dev);
+    printf("Current CUDA device: %d\n", dev);
+
+    // Can CUDA see the GL context at all?
+    unsigned int count = 0;
+    int devices[16];
+    cudaError_t interop_err = cudaGLGetDevices(&count, devices, 16, cudaGLDeviceListAll);
+    printf("cudaGLGetDevices returned: %d (%s), count: %u\n",
+           interop_err, cudaGetErrorString(interop_err), count);
+    for (unsigned int i = 0; i < count; i++)
+        printf("  GL-interop device: %d\n", devices[i]);
+
     CHECK(cudaGraphicsGLRegisterBuffer(cuda_resource, *pbo,
                                        cudaGraphicsRegisterFlagsNone));
 }
