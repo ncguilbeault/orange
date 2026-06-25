@@ -224,6 +224,18 @@ void update_pga_gain_value(Emergent::CEmergentCamera *camera, int pga_gain_val,
     }
 }
 
+void update_line_time_value(Emergent::CEmergentCamera *camera, int line_time_val,
+                       CameraParams *camera_params) {
+    EVT_CameraGetUInt32ParamMax(camera, "LineTime", &camera_params->line_time_max);
+    EVT_CameraGetUInt32ParamMin(camera, "LineTime", &camera_params->line_time_min);
+    EVT_CameraGetUInt32ParamInc(camera, "LineTime", &camera_params->line_time_inc);
+    if (line_time_val >= camera_params->line_time_min &&
+        line_time_val <= camera_params->line_time_max) {
+        EVT_CameraSetUInt32Param(camera, "LineTime", line_time_val);
+        camera_params->line_time = line_time_val;
+    }
+}
+
 void update_color_temperature(Emergent::CEmergentCamera *camera,
                               std::string color_string,
                               CameraParams *camera_params) {
@@ -431,6 +443,7 @@ void open_camera_with_params(Emergent::CEmergentCamera *camera,
     // camera_params.gain));
     update_gain_value(camera, camera_params->gain, camera_params);
     update_pga_gain_value(camera, camera_params->pga_gain, camera_params);
+    update_line_time_value(camera, camera_params->line_time, camera_params);
 
     // check_camera_errors(EVT_CameraSetUInt32Param(camera, "Exposure",
     // camera_params->exposure));
@@ -507,6 +520,14 @@ void update_camera_params(Emergent::CEmergentCamera *camera,
     std::cout << "PGA Gain max: " << camera_params->pga_gain_max << std::endl;
     EVT_CameraGetUInt32ParamMin(camera, "PGAGain", &camera_params->pga_gain_min);
     EVT_CameraGetUInt32ParamInc(camera, "PGAGain", &camera_params->pga_gain_inc);
+    check_camera_errors(Emergent::EVT_CameraGetUInt32Param(
+                            camera, "LineTime", &camera_params->line_time),
+                        camera_params->camera_serial.c_str());
+    std::cout << "Line Time: " << camera_params->line_time << std::endl;
+    EVT_CameraGetUInt32ParamMax(camera, "LineTime", &camera_params->line_time_max);
+    std::cout << "Line Time max: " << camera_params->line_time_max << std::endl;
+    EVT_CameraGetUInt32ParamMin(camera, "LineTime", &camera_params->line_time_min);
+    EVT_CameraGetUInt32ParamInc(camera, "LineTime", &camera_params->line_time_inc);
     check_camera_errors(Emergent::EVT_CameraGetUInt32Param(
                             camera, "Iris", &camera_params->iris),
                         camera_params->camera_serial.c_str());
