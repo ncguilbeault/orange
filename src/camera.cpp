@@ -212,6 +212,18 @@ void update_gain_value(Emergent::CEmergentCamera *camera, int gain_val,
     }
 }
 
+void update_pga_gain_value(Emergent::CEmergentCamera *camera, int pga_gain_val,
+                       CameraParams *camera_params) {
+    EVT_CameraGetUInt32ParamMax(camera, "PGAGain", &camera_params->pga_gain_max);
+    EVT_CameraGetUInt32ParamMin(camera, "PGAGain", &camera_params->pga_gain_min);
+    EVT_CameraGetUInt32ParamInc(camera, "PGAGain", &camera_params->pga_gain_inc);
+    if (pga_gain_val >= camera_params->pga_gain_min &&
+        pga_gain_val <= camera_params->pga_gain_max) {
+        EVT_CameraSetUInt32Param(camera, "PGAGain", pga_gain_val);
+        camera_params->pga_gain = pga_gain_val;
+    }
+}
+
 void update_color_temperature(Emergent::CEmergentCamera *camera,
                               std::string color_string,
                               CameraParams *camera_params) {
@@ -418,6 +430,7 @@ void open_camera_with_params(Emergent::CEmergentCamera *camera,
     // check_camera_errors(EVT_CameraSetUInt32Param(camera, "Gain",
     // camera_params.gain));
     update_gain_value(camera, camera_params->gain, camera_params);
+    update_pga_gain_value(camera, camera_params->pga_gain, camera_params);
 
     // check_camera_errors(EVT_CameraSetUInt32Param(camera, "Exposure",
     // camera_params->exposure));
@@ -486,6 +499,14 @@ void update_camera_params(Emergent::CEmergentCamera *camera,
     std::cout << "Gain max: " << camera_params->gain_max << std::endl;
     EVT_CameraGetUInt32ParamMin(camera, "Gain", &camera_params->gain_min);
     EVT_CameraGetUInt32ParamInc(camera, "Gain", &camera_params->gain_inc);
+    check_camera_errors(Emergent::EVT_CameraGetUInt32Param(
+                            camera, "PGAGain", &camera_params->pga_gain),
+                        camera_params->camera_serial.c_str());
+    std::cout << "PGA Gain: " << camera_params->pga_gain << std::endl;
+    EVT_CameraGetUInt32ParamMax(camera, "PGAGain", &camera_params->pga_gain_max);
+    std::cout << "PGA Gain max: " << camera_params->pga_gain_max << std::endl;
+    EVT_CameraGetUInt32ParamMin(camera, "PGAGain", &camera_params->pga_gain_min);
+    EVT_CameraGetUInt32ParamInc(camera, "PGAGain", &camera_params->pga_gain_inc);
     check_camera_errors(Emergent::EVT_CameraGetUInt32Param(
                             camera, "Iris", &camera_params->iris),
                         camera_params->camera_serial.c_str());

@@ -134,6 +134,7 @@ void load_camera_json_config_files(std::string file_name,
     camera_params->height = camera_config["height"];
     camera_params->frame_rate = camera_config["frame_rate"];
     camera_params->gain = camera_config["gain"];
+    camera_params->pga_gain = camera_config["pga_gain"];
     camera_params->exposure = camera_config["exposure"];
     camera_params->pixel_format = camera_config["pixel_format"];
     camera_params->color_temp = camera_config["color_temp"];

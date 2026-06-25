@@ -20,6 +20,7 @@ struct CameraParams {
     unsigned int frame_rate;
     unsigned int gop; // in seconds
     unsigned int gain;
+    unsigned int pga_gain;
     unsigned int exposure;
     unsigned int iris;
     unsigned int focus;
@@ -35,6 +36,9 @@ struct CameraParams {
     unsigned int gain_max;
     unsigned int gain_min;
     unsigned int gain_inc;
+    unsigned int pga_gain_max;
+    unsigned int pga_gain_min;
+    unsigned int pga_gain_inc;
     unsigned int exposure_max;
     unsigned int exposure_min;
     unsigned int exposure_inc;
@@ -144,6 +148,8 @@ void update_color_temperature(Emergent::CEmergentCamera *camera,
                               std::string color_string,
                               CameraParams *camera_params);
 void update_gain_value(Emergent::CEmergentCamera *camera, int gain_val,
+                       CameraParams *camera_params);
+void update_pga_gain_value(Emergent::CEmergentCamera *camera, int pga_gain_val,
                        CameraParams *camera_params);
 void update_exposure_value(Emergent::CEmergentCamera *camera, int exposure_val,
                            CameraParams *camera_params);
