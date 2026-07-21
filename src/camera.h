@@ -73,6 +73,16 @@ struct CameraParams {
     int sens_temp;
     int sens_temp_max;
     int sens_temp_min;
+    // Extra NVENC options appended to the encoder setup string, built from the
+    // optional per-camera "encoder" config object (see NvEncoderCLIOptions.h
+    // for the accepted tokens and values).
+    std::string encoder_args;
+    // Sets NV_ENC_CONFIG::monoChromeEncoding when enabled via config.
+    bool encoder_mono_chrome = false;
+    // Mono cameras feed the raw frame directly to NVENC as the NV12 luma plane
+    // (chroma pre-filled once) instead of expanding to RGBA. Disable via
+    // config to restore the RGBA input path.
+    bool encoder_mono_nv12 = true;
     CameraParams() : frame_rate(60), gop(1) {}
 };
 

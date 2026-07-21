@@ -117,6 +117,68 @@ std::vector<std::string> string_split_char(char *string_c,
     return res;
 }
 
+// Optional per-camera "encoder" config object. Value-carrying keys map to
+// NvEncoderInitParam tokens appended to the encoder setup string; accepted
+// values are documented in NvEncoderCLIOptions.h. Tokens appended here win
+// over the global codec/preset selection made in the GUI. The codec itself
+// stays global because the container writer selects H264/HEVC from the global
+// setup string.
+static void parse_camera_encoder_config(const json &encoder_config,
+                                        CameraParams *camera_params) {
+    static const std::pair<const char *, const char *> value_keys[] = {
+        {"preset", "-preset"},
+        {"tuning", "-tuninginfo"},
+        {"rate_control", "-rc"},
+        {"multipass", "-multipass"},
+        {"profile", "-profile"},
+        {"bitrate", "-bitrate"},
+        {"max_bitrate", "-maxbitrate"},
+        {"vbv_buffer_size", "-vbvbufsize"},
+        {"cq", "-cq"},
+        {"const_qp", "-constqp"},
+        {"qmin", "-qmin"},
+        {"qmax", "-qmax"},
+        {"aq", "-aq"},
+        {"lookahead", "-lookahead"},
+        {"bframes", "-bf"},
+    };
+
+    std::string args;
+    for (const auto &key_token : value_keys) {
+        if (!encoder_config.contains(key_token.first)) {
+            continue;
+        }
+        const json &value = encoder_config[key_token.first];
+        args += std::string(" ") + key_token.second + " " +
+                (value.is_string() ? value.get<std::string>() : value.dump());
+    }
+    if (encoder_config.value("temporal_aq", false)) {
+        args += " -temporalaq";
+    }
+    if (encoder_config.contains("extra_args")) {
+        args += " " + encoder_config["extra_args"].get<std::string>();
+    }
+    camera_params->encoder_args = args;
+    camera_params->encoder_mono_chrome =
+        encoder_config.value("mono_chrome", false);
+    camera_params->encoder_mono_nv12 = encoder_config.value("mono_nv12", true);
+
+    for (auto it = encoder_config.begin(); it != encoder_config.end(); ++it) {
+        bool known = it.key() == "temporal_aq" || it.key() == "extra_args" ||
+                     it.key() == "mono_chrome" || it.key() == "mono_nv12";
+        for (const auto &key_token : value_keys) {
+            if (it.key() == key_token.first) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) {
+            std::cout << "Ignoring unknown encoder config key: " << it.key()
+                      << std::endl;
+        }
+    }
+}
+
 void load_camera_json_config_files(std::string file_name,
                                    CameraParams *camera_params,
                                    CameraEachSelect *camera_select,
@@ -151,6 +213,9 @@ void load_camera_json_config_files(std::string file_name,
     }
     if (camera_config.contains("yolo")) {
         camera_select->yolo_model = camera_config["yolo"];
+    }
+    if (camera_config.contains("encoder")) {
+        parse_camera_encoder_config(camera_config["encoder"], camera_params);
     }
 }
 

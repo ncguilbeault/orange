@@ -6,29 +6,23 @@
 #include <stdio.h>
 #include <string.h>
 
-template <class EncoderClass>
-void InitializeEncoder(EncoderClass &pEnc, NvEncoderInitParam encodeCLIOptions,
-                       NV_ENC_BUFFER_FORMAT eFormat) {
-    NV_ENC_INITIALIZE_PARAMS initializeParams = {NV_ENC_INITIALIZE_PARAMS_VER};
-    NV_ENC_CONFIG encodeConfig = {NV_ENC_CONFIG_VER};
-
-    initializeParams.encodeConfig = &encodeConfig;
-    pEnc->CreateDefaultEncoderParams(
-        &initializeParams, encodeCLIOptions.GetEncodeGUID(),
-        encodeCLIOptions.GetPresetGUID(), encodeCLIOptions.GetTuningInfo());
-    encodeCLIOptions.SetInitParams(&initializeParams, eFormat);
-    encodeCLIOptions.FullParamToString(&initializeParams);
-    pEnc->CreateEncoder(&initializeParams);
+// Mono cameras feed the raw frame directly to NVENC as the NV12 luma plane
+// with a chroma plane pre-filled once, instead of expanding to 4-channel RGBA
+// and copying 4 bytes per pixel every frame.
+static inline bool use_mono_nv12(const CameraParams *camera_params) {
+    return !camera_params->color && camera_params->encoder_mono_nv12;
 }
 
 static inline void initialize_encoder(EncoderContext *encoder,
                                       std::string encoder_str,
                                       CameraParams *camera_params) {
-    encoder->eFormat = NV_ENC_BUFFER_FORMAT_ABGR;
+    bool mono_nv12 = use_mono_nv12(camera_params);
+    encoder->eFormat =
+        mono_nv12 ? NV_ENC_BUFFER_FORMAT_NV12 : NV_ENC_BUFFER_FORMAT_ABGR;
     int gop_in_frames = camera_params->frame_rate * camera_params->gop;
     std::string encoder_str_with_fps =
         encoder_str + " -fps " + std::to_string(camera_params->frame_rate) +
-        " -gop " + std::to_string(gop_in_frames);
+        " -gop " + std::to_string(gop_in_frames) + camera_params->encoder_args;
     encoder->encodeCLIOptions =
         NvEncoderInitParam(encoder_str_with_fps.c_str());
     CUdevice cuDevice;
@@ -37,8 +31,41 @@ static inline void initialize_encoder(EncoderContext *encoder,
     ck(cuCtxCreate(&encoder->cuContext, 0, cuDevice));
     encoder->pEnc = new NvEncoderCuda(encoder->cuContext, camera_params->width,
                                       camera_params->height, encoder->eFormat);
-    InitializeEncoder(encoder->pEnc, encoder->encodeCLIOptions,
-                      encoder->eFormat);
+
+    NV_ENC_INITIALIZE_PARAMS initializeParams = {NV_ENC_INITIALIZE_PARAMS_VER};
+    NV_ENC_CONFIG encodeConfig = {NV_ENC_CONFIG_VER};
+    initializeParams.encodeConfig = &encodeConfig;
+    encoder->pEnc->CreateDefaultEncoderParams(
+        &initializeParams, encoder->encodeCLIOptions.GetEncodeGUID(),
+        encoder->encodeCLIOptions.GetPresetGUID(),
+        encoder->encodeCLIOptions.GetTuningInfo());
+    encoder->encodeCLIOptions.SetInitParams(&initializeParams,
+                                            encoder->eFormat);
+    if (camera_params->encoder_mono_chrome) {
+        encodeConfig.monoChromeEncoding = 1;
+    }
+    if (mono_nv12) {
+        // The luma plane carries the sensor values unscaled (0-255); signal
+        // full range so players do not apply limited-range expansion.
+        if (encoder->encodeCLIOptions.IsCodecH264()) {
+            auto &vui = encodeConfig.encodeCodecConfig.h264Config.h264VUIParameters;
+            vui.videoSignalTypePresentFlag = 1;
+            vui.videoFormat = 5; // unspecified
+            vui.videoFullRangeFlag = 1;
+        } else {
+            auto &vui = encodeConfig.encodeCodecConfig.hevcConfig.hevcVUIParameters;
+            vui.videoSignalTypePresentFlag = 1;
+            vui.videoFormat = 5; // unspecified
+            vui.videoFullRangeFlag = 1;
+        }
+    }
+    std::cout << camera_params->camera_serial << " encoder settings: "
+              << encoder->encodeCLIOptions.FullParamToString(&initializeParams)
+              << std::endl;
+    encoder->pEnc->CreateEncoder(&initializeParams);
+    if (mono_nv12) {
+        encoder->pEnc->FillInputFrameChromaPlanes(0x80);
+    }
 }
 
 static inline void open_metadata_file(std::ofstream *frame_metadata,
@@ -95,16 +122,30 @@ static inline void initialize_writer(Writer *writer,
 }
 
 static inline void encode_frame(EncoderContext *encoder, FFmpegWriter *writer,
-                                Debayer *debayer) {
+                                Debayer *debayer, FrameGPU *frame_original,
+                                CameraParams *camera_params) {
     // encoding
     const NvEncInputFrame *encoderInputFrame =
         encoder->pEnc->GetNextInputFrame();
-    NvEncoderCuda::CopyToDeviceFrame(
-        encoder->cuContext, debayer->d_debayer, 0,
-        (CUdeviceptr)encoderInputFrame->inputPtr, (int)encoderInputFrame->pitch,
-        encoder->pEnc->GetEncodeWidth(), encoder->pEnc->GetEncodeHeight(),
-        CU_MEMORYTYPE_DEVICE, encoderInputFrame->bufferFormat,
-        encoderInputFrame->chromaOffsets, encoderInputFrame->numChromaPlanes);
+    if (use_mono_nv12(camera_params)) {
+        // Chroma was pre-filled once at encoder creation; copy only the luma
+        // plane, straight from the raw mono frame.
+        NvEncoderCuda::CopyToDeviceFrame(
+            encoder->cuContext, frame_original->d_orig, camera_params->width,
+            (CUdeviceptr)encoderInputFrame->inputPtr,
+            (int)encoderInputFrame->pitch, encoder->pEnc->GetEncodeWidth(),
+            encoder->pEnc->GetEncodeHeight(), CU_MEMORYTYPE_DEVICE,
+            encoderInputFrame->bufferFormat, encoderInputFrame->chromaOffsets,
+            0);
+    } else {
+        NvEncoderCuda::CopyToDeviceFrame(
+            encoder->cuContext, debayer->d_debayer, 0,
+            (CUdeviceptr)encoderInputFrame->inputPtr,
+            (int)encoderInputFrame->pitch, encoder->pEnc->GetEncodeWidth(),
+            encoder->pEnc->GetEncodeHeight(), CU_MEMORYTYPE_DEVICE,
+            encoderInputFrame->bufferFormat, encoderInputFrame->chromaOffsets,
+            encoderInputFrame->numChromaPlanes);
+    }
 
     encoder->pEnc->EncodeFrame(encoder->vPacket);
     for (std::vector<uint8_t> &packet : encoder->vPacket) {
@@ -151,11 +192,12 @@ void GPUVideoEncoder::ProcessOneFrame(void *f) {
 
     if (camera_params->color) {
         debayer_frame_gpu(camera_params, &frame_original, &debayer);
-    } else {
+    } else if (!use_mono_nv12(camera_params)) {
         duplicate_channel_gpu(camera_params, &frame_original, &debayer);
     }
 
-    encode_frame(&encoder, writer.video, &debayer);
+    encode_frame(&encoder, writer.video, &debayer, &frame_original,
+                 camera_params);
     write_metadata(writer.metadata, entry.frame_id, entry.timestamp,
                    entry.timestamp_sys);
 }
