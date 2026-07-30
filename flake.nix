@@ -284,7 +284,12 @@ WRAPPER
               # bundled libraries resolve wherever the vendor installer put
               # them.
               esdkHostDirs=$(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u | sed 's|^${esdk}|${esdkHostPath}|' | tr '\n' ':')
-              hostDirs="/run/opengl-driver/lib:''${esdkHostDirs}${pkgs.lib.concatStringsSep ":" esdkRuntimeLibDirs}"
+              # libtiff comes first: the Emergent libraries and Nix-built
+              # OpenCV both need libtiff.so.6, and whichever loads first
+              # claims the soname for the whole process.  The Nix libtiff
+              # carries the cumulative symbol-version set, so it satisfies
+              # both; the host's older copy satisfies only the Emergent side.
+              hostDirs="${pkgs.lib.getLib pkgs.libtiff}/lib:/run/opengl-driver/lib:''${esdkHostDirs}${pkgs.lib.concatStringsSep ":" esdkRuntimeLibDirs}"
               for exe in $out/opt/orange/orange $out/bin/orange_client $out/bin/yolo_offline; do
                 patchelf --force-rpath --set-rpath "$(patchelf --print-rpath $exe):$hostDirs" $exe
               done
