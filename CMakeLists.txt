@@ -1,12 +1,23 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18...3.31)
 project(OrangeApp LANGUAGES CXX CUDA)
 
-# Set build type
-set(CMAKE_BUILD_TYPE Debug)
+# Default build type; override with -DCMAKE_BUILD_TYPE=...
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
 
-# Set CUDA architecture and options
-set(CMAKE_CUDA_ARCHITECTURES 80)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=sm_80")
+# Default CUDA arch: A100/A6000-class (80). The Nix flake passes a wider
+# list. Override with -DCMAKE_CUDA_ARCHITECTURES=...
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 80)
+endif()
+
+# Find system / Nix-store packages. The Nix flake passes -DOpenCV_DIR=...
+# to point find_package(OpenCV) at the Nix-built OpenCV.
+find_package(CUDAToolkit REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(Threads REQUIRED)
+find_package(OpenGL REQUIRED)
 
 # Directories
 set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
@@ -17,9 +28,14 @@ set(DIR_IMPLOT ${THIRD_PARTY_DIR}/implot)
 set(DIR_FILEBROWSER ${THIRD_PARTY_DIR}/ImGuiFileDialog)
 set(DIR_ICONFONT ${THIRD_PARTY_DIR}/IconFontCppHeaders)
 set(DIR_NVENCODER ${SRC_DIR}/NvEncoder)
-set(DIR_FFMPEG $ENV{HOME}/nvidia/ffmpeg)
-set(DIR_TENSORRT $ENV{HOME}/nvidia/TensorRT)
 set(DIR_NVENC_API ${CMAKE_SOURCE_DIR}/nvenc_api)
+
+# Dependency prefixes. These are CACHE PATH so the Nix flake (or a user)
+# can override them with -DDIR_FFMPEG=... etc.; the defaults preserve the
+# legacy developer layout.
+set(DIR_ESDK     "/opt/EVT/eSDK"                  CACHE PATH "Emergent eSDK install prefix")
+set(DIR_FFMPEG   "$ENV{HOME}/nvidia/ffmpeg/build" CACHE PATH "FFmpeg install prefix")
+set(DIR_TENSORRT "$ENV{HOME}/nvidia/TensorRT"     CACHE PATH "TensorRT install prefix")
 
 # Add the source files
 file(GLOB ORANGE_SOURCES
@@ -80,20 +96,20 @@ include_directories(
     ${DIR_ICONFONT}
     ${DIR_NVENCODER}
     ${DIR_NVENC_API}/include
-    /opt/EVT/eSDK/include/
-    /usr/local/cuda/include/
-    ${DIR_FFMPEG}/build/include/
-    /usr/local/include/opencv4
+    ${DIR_ESDK}/include
+    ${CUDAToolkit_INCLUDE_DIRS}
+    ${DIR_FFMPEG}/include
+    ${OpenCV_INCLUDE_DIRS}
     ${THIRD_PARTY_DIR}/flatbuffers/include/
     ${DIR_TENSORRT}/include
 )
 
 # Add link directories
 link_directories(
-    /opt/EVT/eSDK/lib/
-    /usr/local/cuda/lib64/
-    ${DIR_FFMPEG}/build/lib/
-    ${DIR_TENSORRT}/lib/
+    ${DIR_ESDK}/lib
+    ${CUDAToolkit_LIBRARY_DIR}
+    ${DIR_FFMPEG}/lib
+    ${DIR_TENSORRT}/lib
 )
 
 # Define target
@@ -116,14 +132,17 @@ add_executable(yolo_offline
 )
 
 # Link libraries
+# nvidia-encode is a GPU driver library: on Nix it is stubbed at build time
+# and injected at runtime via autoAddDriverRunpath; elsewhere it resolves
+# from the CUDA toolkit / driver lib dir.
 target_link_libraries(orange
-    pthread
+    Threads::Threads
     m
     enet
     GLEW
-    GL
-    cudart
-    cuda
+    OpenGL::GL
+    CUDA::cudart
+    CUDA::cuda_driver
     nppicc
     nppidei
     nvidia-encode
@@ -154,10 +173,10 @@ target_link_libraries(orange_client
     EmergentCamera
     EmergentGenICam
     EmergentGigEVision
-    pthread
+    Threads::Threads
     enet
-    cudart
-    cuda
+    CUDA::cudart
+    CUDA::cuda_driver
     nppicc
     nppidei
     nvidia-encode
@@ -184,8 +203,8 @@ target_link_libraries(yolo_offline
     opencv_video
     nvinfer
     nvinfer_plugin
-    cudart
-    cuda
+    CUDA::cudart
+    CUDA::cuda_driver
     nppicc
     nppidei
     nvidia-encode
@@ -200,6 +219,13 @@ pkg_check_modules(GLFW3 REQUIRED glfw3)
 target_include_directories(orange PRIVATE ${GLFW3_INCLUDE_DIRS})
 target_link_libraries(orange ${GLFW3_LIBRARIES})
 
-# Add output directory
-#set_target_properties(orange PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/targets)
-#set_target_properties(orange PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/targets)
+# Bake dependency lib dirs into the binaries so they resolve at runtime
+# without LD_LIBRARY_PATH.
+set_target_properties(orange orange_client PROPERTIES
+    BUILD_RPATH   "${DIR_ESDK}/lib;${DIR_TENSORRT}/lib;${DIR_FFMPEG}/lib"
+    INSTALL_RPATH "${DIR_ESDK}/lib;${DIR_TENSORRT}/lib;${DIR_FFMPEG}/lib"
+)
+set_target_properties(yolo_offline PROPERTIES
+    BUILD_RPATH   "${DIR_TENSORRT}/lib"
+    INSTALL_RPATH "${DIR_TENSORRT}/lib"
+)
