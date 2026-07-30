@@ -7,7 +7,11 @@
 #include "opengldisplay.h"
 #include "utils.h"
 #include <cuda_runtime_api.h>
+#if __has_include(<nvtx3/nvToolsExt.h>)
+#include <nvtx3/nvToolsExt.h>
+#else
 #include <nvToolsExt.h>
+#endif
 #include <stdio.h>
 #include <string.h>
 

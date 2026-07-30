@@ -4,7 +4,11 @@
 #include "video_capture.h"
 #include <mutex>
 #include <npp.h>
+#if __has_include(<nvtx3/nvToolsExt.h>)
+#include <nvtx3/nvToolsExt.h>
+#else
 #include <nvToolsExt.h>
+#endif
 
 FrameDetector::FrameDetector(CameraParams *params, CameraEachSelect *select)
     : camera_params(params), camera_select(select), running(false) {

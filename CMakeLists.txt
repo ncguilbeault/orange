@@ -164,9 +164,15 @@ target_link_libraries(orange
     opencv_calib3d
     nvinfer
     nvinfer_plugin
-    nvToolsExt
     glfw
 )
+
+# NVTX: CUDA toolkits up to 12.8 ship libnvToolsExt; newer toolkits provide
+# only the header-only NVTX3, which needs no library.
+find_library(NVTOOLSEXT_LIB nvToolsExt HINTS ${CUDAToolkit_LIBRARY_DIR})
+if(NVTOOLSEXT_LIB)
+    target_link_libraries(orange ${NVTOOLSEXT_LIB})
+endif()
 
 # Link libraries
 target_link_libraries(orange_client

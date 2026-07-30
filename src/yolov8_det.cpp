@@ -2,7 +2,11 @@
 #include "common.hpp"
 #include "utils.h"
 #include <npp.h>
+#if __has_include(<nvtx3/nvToolsExt.h>)
+#include <nvtx3/nvToolsExt.h>
+#else
 #include <nvToolsExt.h>
+#endif
 
 YOLOv8::YOLOv8(const std::string &engine_file_path, int width, int height,
                cudaStream_t stream, unsigned char *d_input_image,
