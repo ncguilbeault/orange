@@ -271,15 +271,25 @@ WRAPPER
           # their own dependencies, so librivermax/libibverbs/libmlx5 and the
           # driver's libcuda/libnvidia-encode fall through to the host dirs,
           # while Nix-provided libraries always win the search order.
-          postFixup = ''
-            # Mirror every library directory inside the SDK tree back to its
-            # host location so the GenICam runtime and Emergent's bundled
-            # libraries resolve wherever the vendor installer put them.
-            esdkHostDirs=$(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u | sed 's|^${esdk}|${esdkHostPath}|' | tr '\n' ':')
-            hostDirs="/run/opengl-driver/lib:''${esdkHostDirs}${pkgs.lib.concatStringsSep ":" esdkRuntimeLibDirs}"
-            for exe in $out/opt/orange/orange $out/bin/orange_client $out/bin/yolo_offline; do
-              patchelf --force-rpath --set-rpath "$(patchelf --print-rpath $exe):$hostDirs" $exe
-            done
+          # Registered as the last postFixup hook: the CUDA
+          # removeStubsFromRunpath hook also rewrites the search path with
+          # plain patchelf, which converts a forced DT_RPATH back into a
+          # DT_RUNPATH — and RUNPATH is not inherited when the Emergent
+          # libraries resolve their own dependencies.  Running last keeps the
+          # forced DT_RPATH in the final binaries.
+          preFixup = ''
+            orangeForceHostRpath() {
+              # Mirror every library directory inside the SDK tree back to
+              # its host location so the GenICam runtime and Emergent's
+              # bundled libraries resolve wherever the vendor installer put
+              # them.
+              esdkHostDirs=$(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u | sed 's|^${esdk}|${esdkHostPath}|' | tr '\n' ':')
+              hostDirs="/run/opengl-driver/lib:''${esdkHostDirs}${pkgs.lib.concatStringsSep ":" esdkRuntimeLibDirs}"
+              for exe in $out/opt/orange/orange $out/bin/orange_client $out/bin/yolo_offline; do
+                patchelf --force-rpath --set-rpath "$(patchelf --print-rpath $exe):$hostDirs" $exe
+              done
+            }
+            postFixupHooks+=(orangeForceHostRpath)
           '';
 
           meta = with pkgs.lib; {
