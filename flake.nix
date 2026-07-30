@@ -170,13 +170,25 @@
           # NvEncoder classes call so the linker can resolve them.  The real
           # driver-provided library is found at runtime through the DT_RPATH
           # set in postFixup; the stub is never installed.
+          #
+          # The eSDK libraries have transitive dependencies of their own: the
+          # GenICam runtime (libGenApi/libGCBase), Emergent's ffmpeg, libtiff.
+          # -L does not apply to resolving a shared library's DT_NEEDED
+          # entries, so pass -rpath-link for every library directory inside
+          # the SDK tree, and --allow-shlib-undefined for anything the vendor
+          # resolves only at runtime from the host.
           preBuild = ''
             cat > nvidia_encode_stub.c << 'EOF'
             void NvEncodeAPICreateInstance()          {}
             void NvEncodeAPIGetMaxSupportedVersion()  {}
             EOF
             cc -shared -fPIC -Wl,-soname,libnvidia-encode.so.1 -o libnvidia-encode.so nvidia_encode_stub.c
-            export NIX_LDFLAGS="-L$(pwd) $NIX_LDFLAGS"
+            NIX_LDFLAGS="-L$(pwd) $NIX_LDFLAGS"
+            for d in $(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u); do
+              NIX_LDFLAGS="-rpath-link $d $NIX_LDFLAGS"
+            done
+            NIX_LDFLAGS="--allow-shlib-undefined $NIX_LDFLAGS"
+            export NIX_LDFLAGS
           '';
 
           nativeBuildInputs = with pkgs; [
@@ -260,7 +272,11 @@ WRAPPER
           # driver's libcuda/libnvidia-encode fall through to the host dirs,
           # while Nix-provided libraries always win the search order.
           postFixup = ''
-            hostDirs="/run/opengl-driver/lib:${pkgs.lib.concatStringsSep ":" esdkRuntimeLibDirs}"
+            # Mirror every library directory inside the SDK tree back to its
+            # host location so the GenICam runtime and Emergent's bundled
+            # libraries resolve wherever the vendor installer put them.
+            esdkHostDirs=$(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u | sed 's|^${esdk}|${esdkHostPath}|' | tr '\n' ':')
+            hostDirs="/run/opengl-driver/lib:''${esdkHostDirs}${pkgs.lib.concatStringsSep ":" esdkRuntimeLibDirs}"
             for exe in $out/opt/orange/orange $out/bin/orange_client $out/bin/yolo_offline; do
               patchelf --force-rpath --set-rpath "$(patchelf --print-rpath $exe):$hostDirs" $exe
             done
