@@ -10,6 +10,7 @@
 #include "realtime_tool.h"
 #include "video_capture.h"
 #include <ImGuiFileDialog.h>
+#include <cstdlib>
 #include <iostream>
 #include <sys/stat.h>
 
@@ -37,11 +38,20 @@ int main(int argc, char **args) {
     GigEVisionDeviceInfo device_info[max_cameras];
     sort_cameras_ip(unsorted_device_info, device_info, cam_count);
 
-    std::filesystem::path cwd = std::filesystem::current_path();
-    std::string delimiter = "/";
-    std::vector<std::string> tokenized_path = string_split(cwd, delimiter);
-    std::string orange_root_dir_str =
-        "/home/" + tokenized_path[2] + "/orange_data";
+    // Resolve the per-user data root from the environment. Under sudo,
+    // SUDO_USER points at the invoking user so orange_data stays in their
+    // home rather than root's.
+    std::string orange_root_dir_str;
+    if (const char *sudo_user = getenv("SUDO_USER")) {
+        orange_root_dir_str = std::string("/home/") + sudo_user + "/orange_data";
+    } else if (const char *home = getenv("HOME")) {
+        orange_root_dir_str = std::string(home) + "/orange_data";
+    } else {
+        std::filesystem::path cwd = std::filesystem::current_path();
+        std::string delimiter = "/";
+        std::vector<std::string> tokenized_path = string_split(cwd, delimiter);
+        orange_root_dir_str = "/home/" + tokenized_path[2] + "/orange_data";
+    }
     prepare_application_folders(orange_root_dir_str);
     std::string recording_root_dir_str = "/data0";
     // std::string input_folder = orange_root_dir_str + "/exp/unsorted";

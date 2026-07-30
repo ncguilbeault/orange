@@ -13,7 +13,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cuda_gl_interop.h>
+#include <filesystem>
+#include <fstream>
 #include <stdio.h>
+#include <string>
 
 typedef struct gx_context {
     u32 swap_interval;
@@ -66,6 +69,47 @@ GLFWwindow *gx_glfw_init_render_target(u32 marjor_version, u32 minor_version,
     return window;
 }
 
+// ImGui rewrites imgui.ini next to the working directory on every layout
+// change; when the app runs from a read-only install prefix (e.g. the Nix
+// store) that write silently fails, so pick a writable per-user directory
+// instead. Prefers the working directory when it is writable so development
+// builds keep their current behavior.
+static std::string gx_pick_writable_ini_dir() {
+    namespace fs = std::filesystem;
+    auto test_path = fs::path(".orange_write_test");
+    {
+        std::ofstream f(test_path);
+        if (f.good()) {
+            std::error_code rm_ec;
+            fs::remove(test_path, rm_ec);
+            return ".";
+        }
+    }
+    std::string user_dir;
+    const char *xdg_data_home = getenv("XDG_DATA_HOME");
+    if (xdg_data_home) {
+        user_dir = std::string(xdg_data_home) + "/orange";
+    } else {
+        const char *home = getenv("HOME");
+        if (!home) {
+            fprintf(stderr, "Warning: HOME not set; imgui.ini layout changes "
+                            "will not be saved\n");
+            return ".";
+        }
+        user_dir = std::string(home) + "/.local/share/orange";
+    }
+    std::error_code ec;
+    fs::create_directories(user_dir, ec);
+    if (ec) {
+        fprintf(stderr,
+                "Warning: could not create %s: %s; imgui.ini layout changes "
+                "will not be saved\n",
+                user_dir.c_str(), ec.message().c_str());
+        return ".";
+    }
+    return user_dir;
+}
+
 void gx_imgui_init(gx_context *context) {
     // ************* Dear Imgui ********************//
     IMGUI_CHECKVERSION();
@@ -74,6 +118,8 @@ void gx_imgui_init(gx_context *context) {
 
     ImGuiIO &io = ImGui::GetIO();
     (void)io;
+    static std::string ini_path = gx_pick_writable_ini_dir() + "/imgui.ini";
+    io.IniFilename = ini_path.c_str();
     // io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable
     // Keyboard Controls io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; //
     // Enable Gamepad Controls
