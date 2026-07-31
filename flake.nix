@@ -90,6 +90,33 @@
           "/lib/x86_64-linux-gnu"
         ];
 
+        # Directories the host loader searches via /etc/ld.so.conf.d — the
+        # vendor installers register the DOCA/Rivermax/DPDK and CUDA-shim
+        # locations there (e.g. /opt/mellanox/doca/lib/x86_64-linux-gnu,
+        # needed by the GPUDirect path), and the Nix loader does not read
+        # ld.so.cache.  Parsed at evaluation time (impure, like the
+        # driver-version probe) and baked into the binaries' DT_RPATH after
+        # the Nix store paths; a change to the host loader configuration
+        # therefore needs a rebuild to be picked up.
+        hostLdConfDirs =
+          let
+            confDir = "/etc/ld.so.conf.d";
+            dirLines = text:
+              builtins.filter (l: l != null)
+                (map
+                  (l:
+                    let m = builtins.match "[[:space:]]*(/[^#[:space:]]*).*" l;
+                    in if m == null then null else builtins.head m)
+                  (pkgs.lib.splitString "\n" text));
+          in
+          if builtins.pathExists confDir then
+            pkgs.lib.unique (builtins.concatMap
+              (f: dirLines (builtins.readFile (confDir + "/" + f)))
+              (builtins.attrNames
+                (pkgs.lib.filterAttrs (_name: t: t == "regular" || t == "symlink")
+                  (builtins.readDir confDir))))
+          else [];
+
         # ---------------------------------------------------------------------------
         # OpenCV built with contrib modules (sfm) and CUDA support.
         # ---------------------------------------------------------------------------
@@ -296,7 +323,7 @@ WRAPPER
               # claims the soname for the whole process.  The Nix libtiff
               # carries the cumulative symbol-version set, so it satisfies
               # both; the host's older copy satisfies only the Emergent side.
-              hostDirs="${pkgs.lib.getLib pkgs.libtiff}/lib:/run/opengl-driver/lib:''${esdkHostDirs}${pkgs.lib.concatStringsSep ":" esdkRuntimeLibDirs}"
+              hostDirs="${pkgs.lib.getLib pkgs.libtiff}/lib:/run/opengl-driver/lib:''${esdkHostDirs}${pkgs.lib.concatStringsSep ":" (pkgs.lib.unique (esdkRuntimeLibDirs ++ hostLdConfDirs))}"
               for exe in $out/opt/orange/orange $out/bin/orange_client $out/bin/yolo_offline; do
                 patchelf --force-rpath --set-rpath "$(patchelf --print-rpath $exe):$hostDirs" $exe
               done
