@@ -184,7 +184,10 @@
             EOF
             cc -shared -fPIC -Wl,-soname,libnvidia-encode.so.1 -o libnvidia-encode.so nvidia_encode_stub.c
             NIX_LDFLAGS="-L$(pwd) $NIX_LDFLAGS"
-            for d in $(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u); do
+            # The SDK ships parallel RHEL builds of some libraries under the
+            # same sonames (e.g. gpu-direct/rhel); exclude them so the Ubuntu
+            # variants are the only candidates.
+            for d in $(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u | grep -v '/rhel'); do
               NIX_LDFLAGS="-rpath-link $d $NIX_LDFLAGS"
             done
             NIX_LDFLAGS="--allow-shlib-undefined $NIX_LDFLAGS"
@@ -283,7 +286,11 @@ WRAPPER
               # its host location so the GenICam runtime and Emergent's
               # bundled libraries resolve wherever the vendor installer put
               # them.
-              esdkHostDirs=$(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u | sed 's|^${esdk}|${esdkHostPath}|' | tr '\n' ':')
+              # /rhel is excluded: the SDK ships parallel RHEL builds of some
+              # libraries under the same sonames (e.g. gpu-direct/rhel), and
+              # whichever directory appears first in the RPATH would claim
+              # the soname for the whole process.
+              esdkHostDirs=$(find ${esdk} \( -type f -o -type l \) -name '*.so*' | xargs -rn1 dirname | sort -u | grep -v '/rhel' | sed 's|^${esdk}|${esdkHostPath}|' | tr '\n' ':')
               # libtiff comes first: the Emergent libraries and Nix-built
               # OpenCV both need libtiff.so.6, and whichever loads first
               # claims the soname for the whole process.  The Nix libtiff
