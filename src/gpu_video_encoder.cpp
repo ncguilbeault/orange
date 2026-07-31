@@ -185,10 +185,19 @@ void GPUVideoEncoder::ProcessOneFrame(void *f) {
     WORKER_ENTRY entry = *(WORKER_ENTRY *)f;
     PutObjectToQueueOut(f);
 
-    // copy frame from cpu to gpu
-    ck(cudaMemcpy2D(frame_original.d_orig, camera_params->width, entry.imagePtr,
-                    camera_params->width, camera_params->width,
-                    camera_params->height, cudaMemcpyHostToDevice));
+    // copy frame to the encoder GPU; with gpu_direct the source already
+    // lives in device memory
+    if (camera_params->gpu_direct) {
+        ck(cudaMemcpy2D(frame_original.d_orig, camera_params->width,
+                        entry.imagePtr, camera_params->width,
+                        camera_params->width, camera_params->height,
+                        cudaMemcpyDeviceToDevice));
+    } else {
+        ck(cudaMemcpy2D(frame_original.d_orig, camera_params->width,
+                        entry.imagePtr, camera_params->width,
+                        camera_params->width, camera_params->height,
+                        cudaMemcpyHostToDevice));
+    }
 
     if (camera_params->color) {
         debayer_frame_gpu(camera_params, &frame_original, &debayer);

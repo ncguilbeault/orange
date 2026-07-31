@@ -105,11 +105,19 @@ void COpenGLDisplay::ThreadRunning() {
             PutObjectToQueueOut(f);
 
             // nvtxRangePush("display_gl_copy_debayer");
-            // copy frame from cpu to gpu
-            CHECK(cudaMemcpy2D(frame_original.d_orig, camera_params->width,
-                               entry.imagePtr, camera_params->width,
-                               camera_params->width, camera_params->height,
-                               cudaMemcpyHostToDevice));
+            // copy frame to the display GPU; with gpu_direct the source
+            // already lives in device memory
+            if (camera_params->gpu_direct) {
+                CHECK(cudaMemcpy2D(frame_original.d_orig, camera_params->width,
+                                   entry.imagePtr, camera_params->width,
+                                   camera_params->width, camera_params->height,
+                                   cudaMemcpyDeviceToDevice));
+            } else {
+                CHECK(cudaMemcpy2D(frame_original.d_orig, camera_params->width,
+                                   entry.imagePtr, camera_params->width,
+                                   camera_params->width, camera_params->height,
+                                   cudaMemcpyHostToDevice));
+            }
 
             if (camera_params->color) {
                 debayer_frame_gpu(camera_params, &frame_original, &debayer);
