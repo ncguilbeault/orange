@@ -291,7 +291,7 @@ int main(int argc, char **args) {
                             }
                         }
 
-                        ecams = new CameraEmergent[num_cameras];
+                        ecams = new CameraEmergent[num_cameras]();
                         for (int i = 0; i < num_cameras; i++) {
                             open_camera_with_params(
                                 &ecams[i].camera,
@@ -1022,7 +1022,7 @@ int main(int argc, char **args) {
                             }
                         }
 
-                        ecams = new CameraEmergent[num_cameras];
+                        ecams = new CameraEmergent[num_cameras]();
                         for (int i = 0; i < num_cameras; i++) {
                             if (!skip_setting_params[i]) {
                                 open_camera_with_params(

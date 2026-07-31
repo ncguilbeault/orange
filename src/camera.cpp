@@ -404,6 +404,14 @@ void open_camera_with_params(Emergent::CEmergentCamera *camera,
 
     if (camera_params->gpu_direct) {
         camera->gpuDirectDeviceId = camera_params->gpu_id;
+        // The SDK defaults to its wrapAroundMemcpy streaming mode, whose
+        // GPUDirect allocation path crashes (observed with eSDK 2.55, also
+        // reproducible with the vendor's multistream tool).  Disable it so
+        // frames are served zero-copy out of the stream ring, matching the
+        // configuration the vendor tools validate.  Zero-copy requires the
+        // requested frame buffers to fit inside the ring (see
+        // evt_buffer_size in orange.cpp).
+        camera->disableWrapAroundMemcpy = true;
     }
 
     check_camera_errors(EVT_CameraOpen(camera, device_info),
