@@ -108,10 +108,15 @@ void COpenGLDisplay::ThreadRunning() {
             // copy frame to the display GPU; with gpu_direct the source
             // already lives in device memory
             if (camera_params->gpu_direct) {
-                CHECK(cudaMemcpy2D(frame_original.d_orig, camera_params->width,
-                                   entry.imagePtr, camera_params->width,
-                                   camera_params->width, camera_params->height,
-                                   cudaMemcpyDeviceToDevice));
+                // The frame lives on the camera's DMA-target GPU while the
+                // display runs on another; the rows are contiguous
+                // (pitch == width), and unlike cudaMemcpy2D a 1D copy
+                // handles cross-device transfers (peer-to-peer when the
+                // topology allows, staged through the host otherwise).
+                CHECK(cudaMemcpy(frame_original.d_orig, entry.imagePtr,
+                                 (size_t)camera_params->width *
+                                     camera_params->height,
+                                 cudaMemcpyDefault));
             } else {
                 CHECK(cudaMemcpy2D(frame_original.d_orig, camera_params->width,
                                    entry.imagePtr, camera_params->width,
