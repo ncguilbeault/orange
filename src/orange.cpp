@@ -71,11 +71,11 @@ int main(int argc, char **args) {
     CameraControl *camera_control =
         new CameraControl{false, false, false, false, false};
 
-    // Must fit inside the eSDK's Mellanox/Rivermax stream ring (262144
-    // packets, ~1.87 GiB): when the requested frame buffers exceed the ring
-    // capacity (98 frames at 4512x4512 Mono8), the SDK switches to its
-    // wrapAroundMemcpy mode, whose GPUDirect allocation path crashes.  60
-    // matches the vendor tools' validated default (one second at 60 fps).
+    // One second of buffering at 60 fps, matching the vendor tools'
+    // default.  With gpu_direct each buffer is a full frame resident on the
+    // DMA-target GPU (60 x 20.4 MB at 4512x4512 Mono8, ~1.2 GiB per
+    // camera), so deeper queues cost GPU memory on dies shared by several
+    // cameras.
     int evt_buffer_size{60};
     PTPParams *ptp_params =
         new PTPParams{0, 0, 0, 0, false, false, false, false};
