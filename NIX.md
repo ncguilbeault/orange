@@ -56,10 +56,10 @@ If the eSDK is installed somewhere other than `/opt/EVT/eSDK`, set `ORANGE_ESDK_
 
 ## Running
 
-Camera capture needs raw NIC access, so orange is typically run as root:
+Camera capture needs raw NIC access, so the `orange` wrapper self-elevates via sudo when not already root, passing through an explicit whitelist of environment variables (display/session vars, the nixGL driver vars, `EVT_DEBUG_LOG`) rather than the full caller environment. Just run:
 
 ```
-sudo $(which orange)
+orange
 ```
 
 Per-user data lives in `~/orange_data` (configs, calibration, detection engines). Under sudo, `SUDO_USER` is used to resolve this to the invoking user's home rather than root's. Recordings are written under `/data0` (site convention baked into the app).

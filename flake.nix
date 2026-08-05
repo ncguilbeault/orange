@@ -282,10 +282,26 @@
             # Headless client and offline YOLO tool need no assets.
             cp orange_client yolo_offline $out/bin/
 
-            # Thin wrapper that cd-s into the app dir so relative font paths work.
+            # Wrapper that self-elevates (camera capture needs raw NIC access)
+            # with an explicit environment whitelist — the GUI/session vars,
+            # the nixGL driver vars when launched through the with-nixgl
+            # output, and the eSDK debug switch — then cd-s into the app dir
+            # so relative font paths work.
             cat > $out/bin/orange <<'WRAPPER'
 #!/usr/bin/env bash
 APPDIR="$(cd "$(dirname "$0")/../opt/orange" && pwd)"
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo \
+        ''${DISPLAY:+DISPLAY="$DISPLAY"} \
+        ''${XAUTHORITY:+XAUTHORITY="$XAUTHORITY"} \
+        ''${XDG_RUNTIME_DIR:+XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR"} \
+        ''${WAYLAND_DISPLAY:+WAYLAND_DISPLAY="$WAYLAND_DISPLAY"} \
+        ''${LD_LIBRARY_PATH:+LD_LIBRARY_PATH="$LD_LIBRARY_PATH"} \
+        ''${__EGL_VENDOR_LIBRARY_FILENAMES:+__EGL_VENDOR_LIBRARY_FILENAMES="$__EGL_VENDOR_LIBRARY_FILENAMES"} \
+        ''${__GLX_VENDOR_LIBRARY_NAME:+__GLX_VENDOR_LIBRARY_NAME="$__GLX_VENDOR_LIBRARY_NAME"} \
+        ''${EVT_DEBUG_LOG:+EVT_DEBUG_LOG="$EVT_DEBUG_LOG"} \
+        "$0" "$@"
+fi
 cd "$APPDIR"
 exec "$APPDIR/orange" "$@"
 WRAPPER
